@@ -58,7 +58,7 @@ class TeamController extends Controller
         // Schools have thousands of members, so the list is searched and paged.
         $members = $team->members()
             ->when($memberSearch !== '', function ($query) use ($memberSearch) {
-                $like = '%'.$memberSearch.'%';
+                $like = '%'.addcslashes($memberSearch, '%_\\').'%';
                 $query->where(fn ($query) => $query->where('users.name', 'like', $like)->orWhere('users.email', 'like', $like));
             })
             ->orderBy('users.name')

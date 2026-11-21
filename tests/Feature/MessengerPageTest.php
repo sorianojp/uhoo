@@ -84,3 +84,16 @@ test('contact search keeps the search term on the next page link', function () {
 
     expect($response->json('next_page_url'))->toContain('search=Zed');
 });
+
+test('contact search treats percent and underscore literally', function () {
+    $viewer = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($viewer, ['role' => TeamRole::Member->value]);
+    User::factory()->count(3)->create()
+        ->each(fn (User $member) => $team->members()->attach($member, ['role' => TeamRole::Member->value]));
+
+    $this->actingAs($viewer)
+        ->getJson("/api/teams/{$team->slug}/contacts?search=%25")
+        ->assertOk()
+        ->assertJsonCount(0, 'data');
+});

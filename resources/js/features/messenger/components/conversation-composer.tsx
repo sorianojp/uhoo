@@ -96,7 +96,17 @@ export function ConversationComposer({
 
         return ids.flatMap((id) => known.get(id) ?? []);
     }, [known, selectedIds, suggestedContactIds]);
-    const visibleContacts = searching ? search.results : suggestedContacts;
+    // Selected people stay at the top while searching for more.
+    const visibleContacts = searching
+        ? [
+              ...selectedIds.flatMap((id) =>
+                  search.results.some((contact) => contact.id === id)
+                      ? []
+                      : (known.get(id) ?? []),
+              ),
+              ...search.results,
+          ]
+        : suggestedContacts;
 
     const loadMoreOnScroll = (event: UIEvent<HTMLDivElement>) => {
         const list = event.currentTarget;

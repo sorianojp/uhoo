@@ -64,7 +64,7 @@ class MobileSessionController extends Controller
         return response()->json($team->members()
             ->where('users.id', '!=', $request->user()->id)
             ->when($request->filled('search'), function ($query) use ($request) {
-                $search = '%'.$request->string('search')->toString().'%';
+                $search = '%'.addcslashes($request->string('search')->toString(), '%_\\').'%';
                 $query->where(fn ($query) => $query->where('name', 'like', $search)->orWhere('email', 'like', $search));
             })
             ->orderBy('name')
