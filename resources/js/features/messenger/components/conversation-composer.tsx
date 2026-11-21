@@ -6,7 +6,7 @@ import {
     UsersRound,
     X,
 } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, UIEvent } from 'react';
 import { initials } from '@/features/messenger/lib/format';
 import type {
@@ -14,14 +14,12 @@ import type {
     NewConversationPayload,
     SchoolClassSummary,
 } from '@/features/messenger/types';
+import { useContactSearch } from '@/features/messenger/use-contact-search';
 
 type ComposerMode = 'direct' | 'group' | 'class';
 
-// Rendering every member of a large school at once makes the dialog lag,
-// so rows are rendered in pages and more are added as the list scrolls.
-const CONTACTS_PAGE_SIZE = 50;
-
 export function ConversationComposer({
+    apiBaseUrl,
     contacts,
     onClose,
     onCreate,
@@ -29,6 +27,7 @@ export function ConversationComposer({
     onOpenClassChat,
     suggestedContactIds,
 }: {
+    apiBaseUrl: string;
     contacts: Contact[];
     onClose: () => void;
     onCreate: (payload: NewConversationPayload) => Promise<boolean>;
@@ -74,50 +73,40 @@ export function ConversationComposer({
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [visibleCount, setVisibleCount] = useState(CONTACTS_PAGE_SIZE);
-    const deferredQuery = useDeferredValue(query);
-    const searchableContacts = useMemo(
+    // Search runs on the server; people picked from an earlier search are
+    // remembered so they stay listed once the query changes.
+    const search = useContactSearch(apiBaseUrl, query);
+    const [picked, setPicked] = useState<Map<number, Contact>>(() => new Map());
+    const known = useMemo(
         () =>
-            contacts.map((contact) => ({
-                contact,
-                haystack:
-                    `${contact.name} ${contact.email} ${contact.school_role}`.toLowerCase(),
-            })),
-        [contacts],
+            new Map(
+                [...contacts, ...picked.values()].map((contact) => [
+                    contact.id,
+                    contact,
+                ]),
+            ),
+        [contacts, picked],
     );
-    const searching = deferredQuery.trim() !== '';
+
+    const searching = query.trim() !== '';
     // Before searching, only the selected people and up to five recent chat
     // partners are listed; with no recent chats the list stays empty.
     const suggestedContacts = useMemo(() => {
-        const byId = new Map(contacts.map((contact) => [contact.id, contact]));
         const ids = [...new Set([...selectedIds, ...suggestedContactIds])];
 
-        return ids.flatMap((id) => byId.get(id) ?? []);
-    }, [contacts, selectedIds, suggestedContactIds]);
-    const filteredContacts = useMemo(() => {
-        const needle = deferredQuery.trim().toLowerCase();
-
-        if (needle === '') {
-            return [];
-        }
-
-        return searchableContacts
-            .filter(({ haystack }) => haystack.includes(needle))
-            .map(({ contact }) => contact);
-    }, [searchableContacts, deferredQuery]);
-    const visibleContacts = searching
-        ? filteredContacts.slice(0, visibleCount)
-        : suggestedContacts;
+        return ids.flatMap((id) => known.get(id) ?? []);
+    }, [known, selectedIds, suggestedContactIds]);
+    const visibleContacts = searching ? search.results : suggestedContacts;
 
     const loadMoreOnScroll = (event: UIEvent<HTMLDivElement>) => {
         const list = event.currentTarget;
 
         if (
             searching &&
-            visibleCount < filteredContacts.length &&
+            search.hasMore &&
             list.scrollTop + list.clientHeight >= list.scrollHeight - 200
         ) {
-            setVisibleCount((count) => count + CONTACTS_PAGE_SIZE);
+            search.loadMore();
         }
     };
     const canSubmit =
@@ -126,7 +115,6 @@ export function ConversationComposer({
     const chooseMode = (nextMode: ComposerMode) => {
         setMode(nextMode);
         setError(null);
-        setVisibleCount(CONTACTS_PAGE_SIZE);
 
         if (nextMode === 'direct' && selectedIds.length > 1) {
             setSelectedIds([selectedIds[0]]);
@@ -135,6 +123,11 @@ export function ConversationComposer({
 
     const toggleContact = (contactId: number) => {
         setError(null);
+        const contact = search.results.find((item) => item.id === contactId);
+
+        if (contact) {
+            setPicked((current) => new Map(current).set(contact.id, contact));
+        }
 
         if (mode === 'direct') {
             setSelectedIds((ids) =>
@@ -257,7 +250,6 @@ export function ConversationComposer({
                             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
                             onChange={(event) => {
                                 setQuery(event.target.value);
-                                setVisibleCount(CONTACTS_PAGE_SIZE);
                             }}
                             placeholder="Search people"
                             type="search"
@@ -324,6 +316,12 @@ export function ConversationComposer({
                                 );
                             })}
                         </>
+                    ) : searching && (search.loading || search.failed) ? (
+                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                            {search.loading
+                                ? 'Searching…'
+                                : 'Could not search right now. Try again.'}
+                        </p>
                     ) : searching ? (
                         <div className="flex min-h-48 flex-col items-center justify-center px-6 text-center">
                             <span className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">

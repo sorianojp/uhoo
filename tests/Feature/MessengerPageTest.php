@@ -42,3 +42,45 @@ test('a direct chat link loads the newest messages in chronological order', func
             ->where('conversations.0.unread_count', 82)
             ->where('conversations.0.last_read_at', null));
 });
+
+test('the messenger page sends only recent chat partners, not every school member', function () {
+    $viewer = User::factory()->create();
+    $partner = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($viewer, ['role' => TeamRole::Member->value]);
+    $team->members()->attach($partner, ['role' => TeamRole::Member->value]);
+    User::factory()->count(30)->create()
+        ->each(fn (User $member) => $team->members()->attach($member, ['role' => TeamRole::Member->value]));
+
+    $conversation = $team->conversations()->create([
+        'created_by' => $viewer->id,
+        'type' => ConversationType::Direct,
+        'last_message_at' => now(),
+    ]);
+    $conversation->participants()->attach($viewer, ['role' => 'owner']);
+    $conversation->participants()->attach($partner, ['role' => 'member']);
+
+    $this->actingAs($viewer)
+        ->get(route('messenger', ['current_team' => $team->slug]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('messenger')
+            ->has('contacts', 1)
+            ->where('contacts.0.id', $partner->id)
+            ->where('suggestedContactIds', [$partner->id]));
+});
+
+test('contact search keeps the search term on the next page link', function () {
+    $viewer = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($viewer, ['role' => TeamRole::Member->value]);
+    User::factory()->count(101)->sequence(fn ($sequence) => ['name' => "Zed Student {$sequence->index}"])->create()
+        ->each(fn (User $member) => $team->members()->attach($member, ['role' => TeamRole::Member->value]));
+
+    $response = $this->actingAs($viewer)
+        ->getJson("/api/teams/{$team->slug}/contacts?search=Zed")
+        ->assertOk()
+        ->assertJsonCount(100, 'data');
+
+    expect($response->json('next_page_url'))->toContain('search=Zed');
+});

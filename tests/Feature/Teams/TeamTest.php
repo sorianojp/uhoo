@@ -441,3 +441,28 @@ test('guests cannot access teams', function () {
 
     $response->assertRedirect(route('login'));
 });
+
+test('the team page lists members a page at a time and can search them', function () {
+    $owner = User::factory()->create(['name' => 'Aaron Owner', 'school_role' => SchoolRole::Admin]);
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    User::factory()->count(60)->create()
+        ->each(fn (User $member) => $team->members()->attach($member, ['role' => TeamRole::Member->value]));
+    $needle = User::factory()->create(['name' => 'Quinn Findable']);
+    $team->members()->attach($needle, ['role' => TeamRole::Member->value]);
+
+    $this->actingAs($owner)
+        ->get(route('teams.edit', $team))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('members', 50)
+            ->where('membersMeta.total', 62)
+            ->where('membersMeta.lastPage', 2));
+
+    $this->actingAs($owner)
+        ->get(route('teams.edit', ['team' => $team, 'member_search' => 'Quinn']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('members', 1)
+            ->where('members.0.id', $needle->id));
+});

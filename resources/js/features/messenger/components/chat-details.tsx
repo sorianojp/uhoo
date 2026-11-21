@@ -39,8 +39,10 @@ import type {
     SharedContent,
     SharedLink,
 } from '@/features/messenger/types';
+import { useContactSearch } from '@/features/messenger/use-contact-search';
 
 export function ChatDetails({
+    apiBaseUrl,
     contacts,
     conversation,
     currentUserId,
@@ -60,6 +62,7 @@ export function ChatDetails({
     pinnedMessages,
     sharedContent,
 }: {
+    apiBaseUrl: string;
     contacts: Contact[];
     conversation: Conversation;
     currentUserId: number;
@@ -455,6 +458,7 @@ export function ChatDetails({
 
             {addingMembers && (
                 <AddMembersDialog
+                    apiBaseUrl={apiBaseUrl}
                     contacts={addableContacts}
                     conversation={conversation}
                     onAddMembers={onAddMembers}
@@ -466,11 +470,13 @@ export function ChatDetails({
 }
 
 export function AddMembersDialog({
+    apiBaseUrl,
     contacts,
     conversation,
     onAddMembers,
     onClose,
 }: {
+    apiBaseUrl: string;
     contacts: Contact[];
     conversation: Conversation;
     onAddMembers: (
@@ -483,11 +489,26 @@ export function AddMembersDialog({
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const filteredContacts = contacts.filter((contact) => {
-        const haystack = `${contact.name} ${contact.email} ${contact.school_role}`;
-
-        return haystack.toLowerCase().includes(query.toLowerCase());
-    });
+    // Members are searched on the server; before typing, the dialog lists only
+    // recent chat partners. People picked in an earlier search stay listed.
+    const search = useContactSearch(apiBaseUrl, query);
+    const [picked, setPicked] = useState<Map<number, Contact>>(new Map());
+    const searching = query.trim() !== '';
+    const isParticipant = (contactId: number) =>
+        conversation.participants.some(
+            (participant) => participant.id === contactId,
+        );
+    const listed = (searching ? search.results : contacts).filter(
+        (contact) => !isParticipant(contact.id),
+    );
+    const filteredContacts = [
+        ...[...picked.values()].filter(
+            (contact) =>
+                selectedIds.includes(contact.id) &&
+                !listed.some((item) => item.id === contact.id),
+        ),
+        ...listed,
+    ];
     const canSubmit = selectedIds.length > 0 && !submitting;
 
     const toggleContact = (contactId: number) => {
@@ -557,8 +578,30 @@ export function AddMembersDialog({
                     </label>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                    {filteredContacts.length > 0 ? (
+                <div
+                    className="min-h-0 flex-1 overflow-y-auto p-2"
+                    onScroll={(event) => {
+                        const list = event.currentTarget;
+
+                        if (
+                            searching &&
+                            search.hasMore &&
+                            list.scrollTop + list.clientHeight >=
+                                list.scrollHeight - 200
+                        ) {
+                            search.loadMore();
+                        }
+                    }}
+                >
+                    {searching &&
+                    filteredContacts.length === 0 &&
+                    (search.loading || search.failed) ? (
+                        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                            {search.loading
+                                ? 'Searching…'
+                                : 'Could not search right now. Try again.'}
+                        </p>
+                    ) : filteredContacts.length > 0 ? (
                         filteredContacts.map((contact) => {
                             const selected = selectedIds.includes(contact.id);
 
@@ -566,7 +609,15 @@ export function AddMembersDialog({
                                 <button
                                     className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-muted/40"
                                     key={contact.id}
-                                    onClick={() => toggleContact(contact.id)}
+                                    onClick={() => {
+                                        setPicked((current) =>
+                                            new Map(current).set(
+                                                contact.id,
+                                                contact,
+                                            ),
+                                        );
+                                        toggleContact(contact.id);
+                                    }}
                                     type="button"
                                 >
                                     <span className="grid size-11 shrink-0 place-items-center rounded-full bg-muted text-sm font-semibold text-foreground">

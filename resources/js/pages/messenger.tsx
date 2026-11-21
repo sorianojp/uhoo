@@ -2127,6 +2127,7 @@ export default function Messenger({
                             <div className="min-h-0 flex-1 overflow-y-auto p-4">
                                 {activeConversation ? (
                                     <ChatDetails
+                                        apiBaseUrl={apiBaseUrl}
                                         contacts={contacts}
                                         conversation={activeConversation}
                                         currentUserId={auth.user.id}
@@ -2164,6 +2165,7 @@ export default function Messenger({
                 </div>
                 {composerOpen && (
                     <ConversationComposer
+                        apiBaseUrl={apiBaseUrl}
                         contacts={contacts}
                         onClose={() => setComposerOpen(false)}
                         onCreate={createConversation}

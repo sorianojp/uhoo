@@ -1,6 +1,7 @@
 import { Form, Head, router } from '@inertiajs/react';
-import { ChevronDown, Mail, UserPlus, X } from 'lucide-react';
+import { ChevronDown, Mail, Search, UserPlus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
 import CancelInvitationModal from '@/components/cancel-invitation-modal';
 import DeleteTeamModal from '@/components/delete-team-modal';
 import Heading from '@/components/heading';
@@ -35,9 +36,19 @@ import type {
     TeamPermissions,
 } from '@/types';
 
+type MembersMeta = {
+    search: string;
+    total: number;
+    currentPage: number;
+    lastPage: number;
+    prevPageUrl: string | null;
+    nextPageUrl: string | null;
+};
+
 type Props = {
     team: Team;
     members: TeamMember[];
+    membersMeta?: MembersMeta;
     invitations: TeamInvitation[];
     permissions: TeamPermissions;
     availableRoles: RoleOption[];
@@ -46,11 +57,36 @@ type Props = {
 export default function TeamEdit({
     team,
     members,
+    membersMeta,
     invitations,
     permissions,
     availableRoles,
 }: Props) {
     const getInitials = useInitials();
+    const [memberSearch, setMemberSearch] = useState(membersMeta?.search ?? '');
+
+    const searchMembers = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        router.get(
+            edit(team.slug).url,
+            memberSearch.trim() === '' ? {} : { member_search: memberSearch },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                only: ['members', 'membersMeta'],
+            },
+        );
+    };
+
+    const visitMembersPage = (url: string | null) => {
+        if (url) {
+            router.visit(url, {
+                preserveScroll: true,
+                preserveState: true,
+                only: ['members', 'membersMeta'],
+            });
+        }
+    };
 
     const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -166,6 +202,34 @@ export default function TeamEdit({
                         ) : null}
                     </div>
 
+                    <form
+                        className="flex items-center gap-2"
+                        onSubmit={searchMembers}
+                        role="search"
+                    >
+                        <Input
+                            aria-label="Search members"
+                            data-test="member-search-input"
+                            onChange={(event) =>
+                                setMemberSearch(event.target.value)
+                            }
+                            placeholder="Search members by name or email"
+                            type="search"
+                            value={memberSearch}
+                        />
+                        <Button type="submit" variant="outline">
+                            <Search /> Search
+                        </Button>
+                    </form>
+
+                    {membersMeta ? (
+                        <p className="text-sm text-muted-foreground">
+                            {membersMeta.total.toLocaleString()}{' '}
+                            {membersMeta.total === 1 ? 'member' : 'members'}
+                            {membersMeta.search ? ' found' : ''}
+                        </p>
+                    ) : null}
+
                     <div className="space-y-3">
                         {members.map((member) => (
                             <div
@@ -260,6 +324,37 @@ export default function TeamEdit({
                             </div>
                         ))}
                     </div>
+
+                    {membersMeta && membersMeta.lastPage > 1 ? (
+                        <div className="flex items-center justify-between gap-2">
+                            <Button
+                                disabled={!membersMeta.prevPageUrl}
+                                onClick={() =>
+                                    visitMembersPage(membersMeta.prevPageUrl)
+                                }
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                            >
+                                Previous
+                            </Button>
+                            <span className="text-sm text-muted-foreground">
+                                Page {membersMeta.currentPage} of{' '}
+                                {membersMeta.lastPage}
+                            </span>
+                            <Button
+                                disabled={!membersMeta.nextPageUrl}
+                                onClick={() =>
+                                    visitMembersPage(membersMeta.nextPageUrl)
+                                }
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    ) : null}
                 </div>
 
                 {invitations.length > 0 ? (

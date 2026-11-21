@@ -68,6 +68,7 @@ class MobileSessionController extends Controller
                 $query->where(fn ($query) => $query->where('name', 'like', $search)->orWhere('email', 'like', $search));
             })
             ->orderBy('name')
-            ->paginate(100, $columns));
+            ->paginate(100, $columns)
+            ->withQueryString());
     }
 }

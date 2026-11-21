@@ -62,6 +62,8 @@ class MessengerController extends Controller
             ->values()
             ->map(fn (Message $message) => MessagePayload::from($message, $user->id));
 
+        $suggestedContactIds = SuggestedContacts::ids($user, $current_team);
+
         return Inertia::render('messenger', [
             'apiBaseUrl' => "/api/teams/{$current_team->slug}",
             'workspace' => [
@@ -69,10 +71,13 @@ class MessengerController extends Controller
                 'name' => $current_team->name,
                 'slug' => $current_team->slug,
             ],
+            // Only recent chat partners are sent with the page; a school can have
+            // tens of thousands of members, so pickers search /contacts instead.
             'contacts' => $current_team->members()
-                ->where('users.id', '!=', $user->id)
-                ->orderBy('name')
+                ->whereIn('users.id', $suggestedContactIds)
                 ->get()
+                ->sortBy(fn (User $contact) => $suggestedContactIds->search($contact->id))
+                ->values()
                 ->map(fn (User $contact) => [
                     'id' => $contact->id,
                     'name' => $contact->name,
@@ -80,7 +85,7 @@ class MessengerController extends Controller
                     'school_role' => $contact->school_role->value,
                     'last_seen_at' => $contact->last_seen_at?->toISOString(),
                 ]),
-            'suggestedContactIds' => SuggestedContacts::ids($user, $current_team),
+            'suggestedContactIds' => $suggestedContactIds,
             'conversations' => $conversations,
             'initialConversationId' => $activeConversationId,
             'initialMessages' => $messages,

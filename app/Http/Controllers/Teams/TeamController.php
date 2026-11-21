@@ -53,6 +53,17 @@ class TeamController extends Controller
         Gate::authorize('update', $team);
 
         $user = $request->user();
+        $memberSearch = trim($request->string('member_search')->toString());
+
+        // Schools have thousands of members, so the list is searched and paged.
+        $members = $team->members()
+            ->when($memberSearch !== '', function ($query) use ($memberSearch) {
+                $like = '%'.$memberSearch.'%';
+                $query->where(fn ($query) => $query->where('users.name', 'like', $like)->orWhere('users.email', 'like', $like));
+            })
+            ->orderBy('users.name')
+            ->paginate(50, ['users.*'], 'members_page')
+            ->withQueryString();
 
         return Inertia::render('teams/edit', [
             'team' => [
@@ -61,7 +72,7 @@ class TeamController extends Controller
                 'slug' => $team->slug,
                 'isPersonal' => $team->is_personal,
             ],
-            'members' => $team->members()->get()->map(function (User $member) {
+            'members' => $members->getCollection()->map(function (User $member) {
                 /** @var Membership $membership */
                 $membership = $member->getRelation('pivot');
 
@@ -74,6 +85,14 @@ class TeamController extends Controller
                     'role_label' => $membership->role->label(),
                 ];
             }),
+            'membersMeta' => [
+                'search' => $memberSearch,
+                'total' => $members->total(),
+                'currentPage' => $members->currentPage(),
+                'lastPage' => $members->lastPage(),
+                'prevPageUrl' => $members->previousPageUrl(),
+                'nextPageUrl' => $members->nextPageUrl(),
+            ],
             'invitations' => $team->invitations()
                 ->whereNull('accepted_at')
                 ->get()
